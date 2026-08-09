@@ -127,6 +127,146 @@ check('env ports fall back to the defaults outside a worktree', () => {
 	assert.equal(testsPort, 8889);
 });
 
+/**
+ * Builds a Playwright config with `CI` forced on or off.
+ *
+ * `createPlaywrightConfig` reads `CI` and writes `WP_BASE_URL`; both are put
+ * back so the checks stay independent of each other and of the caller's shell.
+ *
+ * @param {boolean} ci      Whether to build the config as CI would.
+ * @param {Object}  options Options passed through to the factory.
+ * @return {Object} The resulting Playwright configuration.
+ */
+function buildPlaywrightConfig(ci, options = {}) {
+	const { createPlaywrightConfig } = requireWithoutPlaywright(
+		path.join(root, 'playwright.js')
+	);
+	const previousCI = process.env.CI;
+	const previousBaseURL = process.env.WP_BASE_URL;
+
+	if (ci) {
+		process.env.CI = '1';
+	} else {
+		delete process.env.CI;
+	}
+
+	try {
+		return createPlaywrightConfig({
+			testDir: '/specs',
+			globalSetup: '/global-setup.js',
+			...options,
+		});
+	} finally {
+		if (previousCI === undefined) {
+			delete process.env.CI;
+		} else {
+			process.env.CI = previousCI;
+		}
+
+		if (previousBaseURL === undefined) {
+			delete process.env.WP_BASE_URL;
+		} else {
+			process.env.WP_BASE_URL = previousBaseURL;
+		}
+	}
+}
+
+/**
+ * Requires a module with `@playwright/test` stubbed out.
+ *
+ * It is an optional peer dependency and is not installed here. The config
+ * factory only reads `devices` from it, for the `projects` block that none of
+ * these checks look at, so an empty stub keeps the self-test instant instead of
+ * pulling in a browser download.
+ *
+ * @param {string} id The module to load.
+ * @return {Object} The module exports.
+ */
+function requireWithoutPlaywright(id) {
+	const Module = require('node:module');
+	const load = Module._load;
+
+	Module._load = function (request, ...rest) {
+		return request === '@playwright/test'
+			? { devices: {} }
+			: load.call(this, request, ...rest);
+	};
+
+	try {
+		return require(id);
+	} finally {
+		Module._load = load;
+	}
+}
+
+/**
+ * Flattens a `reporter` value to the reporter names it resolves to.
+ *
+ * @param {string|Array} reporter A Playwright `reporter` value.
+ * @return {Array<string>} The reporter names, in order.
+ */
+function reporterNames(reporter) {
+	return typeof reporter === 'string'
+		? [reporter]
+		: reporter.map((entry) =>
+				typeof entry === 'string' ? entry : entry[0]
+			);
+}
+
+check('extra reporters are appended to the defaults, not swapped in', () => {
+	const flaky = './config/flaky-tests-reporter.js';
+
+	assert.deepEqual(
+		reporterNames(buildPlaywrightConfig(true).reporter),
+		['github'],
+		'the CI default changed'
+	);
+	assert.deepEqual(
+		reporterNames(buildPlaywrightConfig(false).reporter),
+		['list'],
+		'the local default changed'
+	);
+
+	assert.deepEqual(
+		reporterNames(
+			buildPlaywrightConfig(true, { reporters: [flaky] }).reporter
+		),
+		['github', flaky],
+		'the CI default was lost when a reporter was appended'
+	);
+	assert.deepEqual(
+		reporterNames(
+			buildPlaywrightConfig(false, { reporters: [flaky] }).reporter
+		),
+		['list', flaky],
+		'the local default was lost when a reporter was appended'
+	);
+});
+
+check('appended reporters keep their options', () => {
+	const { reporter } = buildPlaywrightConfig(true, {
+		reporters: [['json', { outputFile: 'results.json' }]],
+	});
+
+	assert.deepEqual(reporter, [
+		['github'],
+		['json', { outputFile: 'results.json' }],
+	]);
+});
+
+check('an explicit overrides.reporter still wins', () => {
+	const { reporter } = buildPlaywrightConfig(true, {
+		reporters: ['./config/flaky-tests-reporter.js'],
+		overrides: { reporter: 'dot' },
+	});
+
+	assert.equal(
+		reporter,
+		'dot',
+		'overrides.reporter must keep full control of the reporter list'
+	);
+});
+
 check('every runtime require is a declared dependency', () => {
 	const declared = new Set([
 		...Object.keys(pkg.dependencies || {}),

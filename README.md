@@ -69,6 +69,26 @@ The web server is configured with `port`, never `url`. Playwright only exports
 `PLAYWRIGHT_TEST_BASE_URL` for the `port` form, and specs build their expected
 URLs from it.
 
+### Reporters
+
+The default is `github` under CI and `list` everywhere else. `reporters` appends
+to that default, so a plugin can add its own without restating the split:
+
+```js
+module.exports = createPlaywrightConfig({
+	testDir: …,
+	globalSetup: …,
+	reporters: ['./config/flaky-tests-reporter.js'],
+});
+```
+
+Entries are either a name or a `[name, options]` pair, and they apply to both
+branches — appended reporters run locally as well as under CI.
+
+`overrides.reporter` replaces the defaults outright and still takes precedence
+over `reporters`. Reach for it only when a plugin genuinely wants full control;
+otherwise the CI/local split ends up duplicated in every repository.
+
 ## Environment scripts
 
 ```json

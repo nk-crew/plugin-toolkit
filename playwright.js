@@ -13,19 +13,35 @@ const { devices } = require('@playwright/test');
 const { getPorts } = require('./scripts/env-ports.js');
 
 /**
+ * Normalises one reporter into Playwright's `[name, options]` form.
+ *
+ * @param {string|Array} reporter A reporter name, or a `[name, options]` pair.
+ * @return {Array} The reporter as a `[name, options]` pair.
+ */
+function toReporterEntry(reporter) {
+	return typeof reporter === 'string' ? [reporter] : reporter;
+}
+
+/**
  * Builds a Playwright config for a plugin.
  *
- * @param {Object}  options            Options.
- * @param {string}  options.testDir    Absolute path to the specs directory.
- * @param {string}  options.globalSetup Absolute path to the global setup file.
- * @param {number}  [options.timeout]  Per-test timeout in milliseconds.
- * @param {Object}  [options.overrides] Extra config merged over the result.
+ * @param {Object} options             Options.
+ * @param {string} options.testDir     Absolute path to the specs directory.
+ * @param {string} options.globalSetup Absolute path to the global setup file.
+ * @param {number} [options.timeout]   Per-test timeout in milliseconds.
+ * @param {Array}  [options.reporters] Extra reporters appended to the defaults,
+ *                                     each a name or a `[name, options]` pair.
+ *                                     Prefer this over `overrides.reporter`,
+ *                                     which replaces the defaults and makes
+ *                                     every plugin restate the CI/local split.
+ * @param {Object} [options.overrides] Extra config merged over the result.
  * @return {Object} A Playwright configuration object.
  */
 function createPlaywrightConfig({
 	testDir,
 	globalSetup,
 	timeout,
+	reporters = [],
 	overrides = {},
 }) {
 	const { testsPort } = getPorts();
@@ -35,8 +51,13 @@ function createPlaywrightConfig({
 	// rather than from the config.
 	process.env.WP_BASE_URL = baseURL;
 
+	// The list form, so `reporters` can be appended to it. Playwright treats
+	// `[['list']]` and `'list'` the same.
+	const defaultReporters = process.env.CI ? [['github']] : [['list']];
+
 	return {
-		reporter: process.env.CI ? [['github']] : 'list',
+		// `overrides.reporter` still wins, via the spread at the end.
+		reporter: [...defaultReporters, ...reporters.map(toReporterEntry)],
 		forbidOnly: !!process.env.CI,
 		workers: 1,
 		retries: process.env.CI ? 2 : 0,
