@@ -2,8 +2,13 @@
 	"name": "@nk-crew/plugin-toolkit",
 	"version": "0.1.0",
 	"description": "Shared development tooling for the nk-crew WordPress plugins",
-	"license": "GPL-2.0",
+	"license": "MIT",
 	"author": "nK <https://nkdev.info>",
+	"scripts": {
+		"lint": "biome check",
+		"format": "biome check --write",
+		"test": "node scripts/self-test.js"
+	},
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/nk-crew/plugin-toolkit.git"
@@ -22,11 +27,12 @@
 		"nk-worktree-setup": "./scripts/worktree-setup.sh"
 	},
 	"files": [
+		"LICENSE",
 		"biome.json",
-		"stylelint.js",
 		"lint-staged.js",
 		"playwright.js",
-		"scripts"
+		"scripts",
+		"stylelint.js"
 	],
 	"engines": {
 		"node": ">=22"
@@ -60,5 +66,8 @@
 	},
 	"publishConfig": {
 		"access": "public"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.5.7"
 	}
 }
