@@ -74,7 +74,7 @@ URLs from it.
 		"env:start": "nk-wp-env start",
 		"env:stop": "nk-wp-env stop",
 		"env:destroy": "nk-wp-env destroy",
-		"env:ports": "node -e \"require('@nk-crew/plugin-toolkit/env-ports')\""
+		"env:ports": "nk-env-ports"
 	},
 	"nkPluginToolkit": {
 		"plugins": ["my-plugin", "my-test-helper"]

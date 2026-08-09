@@ -128,11 +128,3 @@ function getPorts() {
 }
 
 module.exports = { getPorts, findProjectRoot };
-
-// `nk-env-ports` — handy when you need to know where a worktree is served.
-if (require.main === module) {
-	const { port, testsPort } = getPorts();
-
-	console.log(`development  http://localhost:${port}`);
-	console.log(`tests        http://localhost:${testsPort}`);
-}
