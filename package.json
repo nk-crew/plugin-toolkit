@@ -1,0 +1,64 @@
+{
+	"name": "@nk-crew/plugin-toolkit",
+	"version": "0.1.0",
+	"description": "Shared development tooling for the nk-crew WordPress plugins",
+	"license": "GPL-2.0",
+	"author": "nK <https://nkdev.info>",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/nk-crew/plugin-toolkit.git"
+	},
+	"exports": {
+		"./biome": "./biome.json",
+		"./stylelint": "./stylelint.js",
+		"./lint-staged": "./lint-staged.js",
+		"./playwright": "./playwright.js",
+		"./env-ports": "./scripts/env-ports.js",
+		"./package.json": "./package.json"
+	},
+	"bin": {
+		"nk-wp-env": "./scripts/wp-env.js",
+		"nk-activate-plugins": "./scripts/activate-plugin.js",
+		"nk-worktree-setup": "./scripts/worktree-setup.sh"
+	},
+	"files": [
+		"biome.json",
+		"stylelint.js",
+		"lint-staged.js",
+		"playwright.js",
+		"scripts"
+	],
+	"engines": {
+		"node": ">=22"
+	},
+	"dependencies": {
+		"micromatch": "^4.0.8"
+	},
+	"peerDependencies": {
+		"@biomejs/biome": ">=2.5.0",
+		"@playwright/test": ">=1.45.0",
+		"@wordpress/env": ">=10.0.0",
+		"@wordpress/stylelint-config": ">=22.0.0",
+		"stylelint": ">=16.0.0"
+	},
+	"peerDependenciesMeta": {
+		"@biomejs/biome": {
+			"optional": true
+		},
+		"@playwright/test": {
+			"optional": true
+		},
+		"@wordpress/env": {
+			"optional": true
+		},
+		"@wordpress/stylelint-config": {
+			"optional": true
+		},
+		"stylelint": {
+			"optional": true
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	}
+}

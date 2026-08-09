@@ -1,0 +1,84 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.5.7/schema.json",
+	"vcs": {
+		"enabled": true,
+		"clientKind": "git",
+		"useIgnoreFile": true
+	},
+	"files": {
+		"includes": [
+			"**",
+			"!.claude",
+			"!**/artifacts",
+			"!**/assets/vendor",
+			"!**/blocks/wordpress/base-styles",
+			"!**/build",
+			"!**/composer-libraries",
+			"!**/core-plugin",
+			"!**/dist",
+			"!**/dist-zip",
+			"!**/flaky-tests",
+			"!**/languages",
+			"!**/node_modules",
+			"!**/tests/plugins",
+			"!**/tests/themes",
+			"!**/vendor",
+			"!**/vendors",
+			"!**/.cache",
+			"!**/*.min.js",
+			"!**/*.min.css",
+			"!**/*.svg",
+			"!**/package-lock.json"
+		]
+	},
+	"formatter": {
+		"enabled": true,
+		"indentStyle": "tab",
+		"indentWidth": 4,
+		"lineWidth": 80,
+		"lineEnding": "lf"
+	},
+	"javascript": {
+		"formatter": {
+			"quoteStyle": "single",
+			"trailingCommas": "es5",
+			"semicolons": "always",
+			"arrowParentheses": "always",
+			"bracketSameLine": false,
+			"bracketSpacing": true
+		}
+	},
+	"json": {
+		"parser": {
+			"allowComments": true
+		}
+	},
+	"assist": {
+		"enabled": true,
+		"actions": {
+			"source": {
+				"organizeImports": "on"
+			}
+		}
+	},
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"preset": "recommended",
+			"complexity": {
+				"useOptionalChain": "off"
+			},
+			"correctness": {
+				"noUnusedFunctionParameters": "off"
+			}
+		}
+	},
+	"css": {
+		"formatter": {
+			"enabled": false
+		},
+		"linter": {
+			"enabled": false
+		}
+	}
+}
