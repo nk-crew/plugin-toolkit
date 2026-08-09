@@ -39,6 +39,10 @@ it finds a nested root configuration.
 module.exports = require('@nk-crew/plugin-toolkit/stylelint');
 ```
 
+Provide `stylelint` and `@wordpress/stylelint-config` yourself — stylelint
+resolves the `extends` target from your project, so this package deliberately
+does not pin either of them. The rules assume stylelint 16.
+
 Stylelint still owns SCSS because Biome does not parse it yet. Both this file
 and stylelint itself can go once that lands.
 
