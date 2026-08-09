@@ -73,7 +73,91 @@ const localBin = path.join(
 const wpEnvBin = fs.existsSync(localBin) ? localBin : 'wp-env';
 
 /**
- * Runs `wp plugin activate` in a container, retrying while the site is not ready.
+ * Runs a wp-cli command in a container.
+ *
+ * @param {string}   container The wp-env container to run in.
+ * @param {string[]} args      The wp-cli arguments.
+ * @return {{ status: number, output: string }} The result.
+ */
+function wpCli(container, args) {
+	const result = spawnSync(wpEnvBin, ['run', container, 'wp', ...args], {
+		cwd: projectRoot,
+		encoding: 'utf-8',
+		shell: process.platform === 'win32',
+	});
+
+	const stdout = result.stdout || '';
+	const stderr = result.stderr || '';
+
+	return {
+		status: result.status,
+		// wp-env writes its own progress lines to stderr and the command's
+		// output to stdout, so keep both: the caller decides which it needs.
+		stdout,
+		stderr,
+		output: `${stderr || stdout}`.trim(),
+	};
+}
+
+/**
+ * Lists which of the configured plugins are not active.
+ *
+ * `wp-env run` wraps command output in progress lines of its own, so the JSON
+ * array is picked out of the surrounding noise rather than parsed whole.
+ *
+ * @param {string} container The wp-env container to inspect.
+ * @return {string[]|null} The inactive plugins, or null if the list is unreadable.
+ */
+function findInactive(container) {
+	const listed = wpCli(container, [
+		'plugin',
+		'list',
+		'--status=active',
+		'--field=name',
+		'--format=json',
+	]);
+
+	if (listed.status !== 0) {
+		return null;
+	}
+
+	const match = `${listed.stdout}\n${listed.stderr}`.match(/\[.*?\]/s);
+
+	if (!match) {
+		return null;
+	}
+
+	try {
+		const active = new Set(JSON.parse(match[0]));
+
+		return plugins.filter((name) => !active.has(name));
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Blocks for a moment between attempts.
+ */
+function pause() {
+	spawnSync(process.execPath, [
+		'-e',
+		`setTimeout(() => {}, ${RETRY_DELAY_MS})`,
+	]);
+}
+
+/**
+ * Activates the configured plugins in a container, in order.
+ *
+ * Retries cover a database that is still coming up, but a plain retry is not
+ * enough on its own. `wp plugin activate a b c` keeps going after one of them
+ * fails, so a half-finished run can leave a test helper active while the plugin
+ * it stubs is not. The helper's stub classes then load first and every
+ * subsequent attempt dies on a redeclaration fatal — a state the retry loop
+ * created and cannot escape.
+ *
+ * So after a failure the configured plugins are deactivated before trying
+ * again, which puts the site back to a state activation can succeed from.
  *
  * @param {string} container The wp-env container to run in.
  * @return {{ ok: boolean, output: string }} The outcome of the last attempt.
@@ -82,28 +166,31 @@ function activateIn(container) {
 	let output = '';
 
 	for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
-		const result = spawnSync(
-			wpEnvBin,
-			['run', container, 'wp', 'plugin', 'activate', ...plugins],
-			{
-				cwd: projectRoot,
-				encoding: 'utf-8',
-				shell: process.platform === 'win32',
-			}
-		);
-
-		if (result.status === 0) {
-			return { ok: true, output: result.stdout || '' };
+		if (attempt > 1) {
+			// Best effort: the site may simply not be up yet.
+			wpCli(container, ['plugin', 'deactivate', ...plugins]);
 		}
 
-		output = `${result.stderr || result.stdout || ''}`.trim();
+		const activated = wpCli(container, ['plugin', 'activate', ...plugins]);
+
+		if (activated.status === 0) {
+			// `wp plugin activate` can report success for the set while an
+			// individual plugin stayed inactive, so confirm rather than trust.
+			const missing = findInactive(container);
+
+			if (missing === null) {
+				output = 'could not read the list of active plugins';
+			} else if (missing.length) {
+				output = `these plugins did not become active: ${missing.join(', ')}`;
+			} else {
+				return { ok: true, output: activated.output };
+			}
+		} else {
+			output = activated.output;
+		}
 
 		if (attempt < ATTEMPTS) {
-			// `spawnSync` keeps this simple: block until the next attempt.
-			spawnSync(process.execPath, [
-				'-e',
-				`setTimeout(() => {}, ${RETRY_DELAY_MS})`,
-			]);
+			pause();
 		}
 	}
 
