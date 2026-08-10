@@ -267,6 +267,20 @@ check('an explicit overrides.reporter still wins', () => {
 	);
 });
 
+check('navigations are bounded, not left to the per-test budget', () => {
+	const { use } = buildPlaywrightConfig(true);
+
+	assert.equal(
+		typeof use.navigationTimeout,
+		'number',
+		'without an explicit navigationTimeout Playwright uses 0, and a stuck page load eats the whole test timeout on every attempt'
+	);
+	assert.ok(
+		use.navigationTimeout > 0,
+		'0 means "no timeout", which is the bug this guards against'
+	);
+});
+
 check('every runtime require is a declared dependency', () => {
 	const declared = new Set([
 		...Object.keys(pkg.dependencies || {}),

@@ -85,6 +85,12 @@ function createPlaywrightConfig({
 				process.env.STORAGE_STATE_PATH ||
 				path.join(process.cwd(), 'artifacts/storage-states/admin.json'),
 			actionTimeout: 10000,
+			// Playwright Test defaults this to `0`, and `actionTimeout` does
+			// not cover navigations. Left unset, a `goto` or a
+			// `waitForNavigation` that never resolves hangs until the whole
+			// per-test budget is gone, so a single stuck page load costs the
+			// full `timeout` (and the same again for every retry).
+			navigationTimeout: 30000,
 			trace: 'retain-on-failure',
 			screenshot: 'only-on-failure',
 			video: 'on-first-retry',
