@@ -281,6 +281,34 @@ check('navigations are bounded, not left to the per-test budget', () => {
 	);
 });
 
+check('tracing is not paid for on the happy path', () => {
+	const { use, retries } = buildPlaywrightConfig(true);
+
+	assert.equal(
+		use.trace,
+		'on-first-retry',
+		'`retain-on-failure` traces every test and discards it on success, so a green suite pays the tracing cost in full'
+	);
+	assert.ok(
+		retries > 0,
+		'on-first-retry only yields artefacts if a failing test is actually retried under CI'
+	);
+});
+
+check('slow tests are reported', () => {
+	const { reportSlowTests } = buildPlaywrightConfig(true);
+
+	assert.notEqual(
+		reportSlowTests,
+		null,
+		'null silences the one report that would surface an expensive beforeEach'
+	);
+	assert.ok(
+		reportSlowTests && reportSlowTests.threshold > 0,
+		'a threshold of 0 flags every test and so says nothing'
+	);
+});
+
 check('every runtime require is a declared dependency', () => {
 	const declared = new Set([
 		...Object.keys(pkg.dependencies || {}),

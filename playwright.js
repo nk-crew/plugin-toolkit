@@ -65,7 +65,11 @@ function createPlaywrightConfig({
 			Number.parseInt(process.env.TIMEOUT || '', 10) ||
 			timeout ||
 			200_000,
-		reportSlowTests: null,
+		// Playwright's default is `{ max: 5, threshold: 15000 }`; `null` silenced
+		// it entirely. That hid a suite where a `beforeEach` was loading the whole
+		// of wp-admin before every test, for months. The cost of the report is a
+		// few lines at the end of a run.
+		reportSlowTests: { max: 5, threshold: 30_000 },
 		testDir,
 		globalSetup,
 		outputDir: path.join(process.cwd(), 'artifacts/test-results'),
@@ -91,7 +95,13 @@ function createPlaywrightConfig({
 			// per-test budget is gone, so a single stuck page load costs the
 			// full `timeout` (and the same again for every retry).
 			navigationTimeout: 30000,
-			trace: 'retain-on-failure',
+			// `retain-on-failure` records a trace for every test and throws it
+			// away when the test passes, so the whole suite pays for tracing to
+			// keep artefacts for the few tests that fail. `on-first-retry` moves
+			// that cost onto the retry, which `retries` above already guarantees
+			// for anything that fails under CI -- same artefacts where they are
+			// useful, none of the overhead where they are not.
+			trace: 'on-first-retry',
 			screenshot: 'only-on-failure',
 			video: 'on-first-retry',
 		},
