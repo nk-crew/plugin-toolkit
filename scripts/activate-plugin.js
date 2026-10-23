@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 /**
- * Activates the plugins in both `wp-env` environments after a start.
+ * Upgrades the database and activates the plugins in both `wp-env`
+ * environments after a start.
  *
  * Plugins are mounted through `mappings` in `.wp-env.json` rather than through
  * `plugins`, so that each directory inside WordPress keeps a fixed name no
@@ -171,9 +172,18 @@ function activateIn(container) {
 			wpCli(container, ['plugin', 'deactivate', ...plugins]);
 		}
 
-		const activated = wpCli(container, ['plugin', 'activate', ...plugins]);
+		// After a switch of the WordPress core version, wp-admin redirects to
+		// upgrade.php until the database is upgraded, and REST calls from the
+		// E2E setup (activateTheme) fail. A no-op when the database is current.
+		const upgraded = wpCli(container, ['core', 'update-db', '--quiet']);
+		const activated =
+			upgraded.status === 0
+				? wpCli(container, ['plugin', 'activate', ...plugins])
+				: null;
 
-		if (activated.status === 0) {
+		if (!activated) {
+			output = `wp core update-db failed: ${upgraded.output}`;
+		} else if (activated.status === 0) {
 			// `wp plugin activate` can report success for the set while an
 			// individual plugin stayed inactive, so confirm rather than trust.
 			const missing = findInactive(container);
