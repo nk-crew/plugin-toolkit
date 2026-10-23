@@ -111,8 +111,10 @@ checkout keeps 8888/8889, linked worktrees derive their own pair, and explicit
 `WP_ENV_PORT` / `WP_ENV_TESTS_PORT` always win. Several branches can run their
 own WordPress at the same time.
 
-`nk-activate-plugins` activates the list in `nkPluginToolkit.plugins`, in order,
-in both environments, retrying while the site is still coming up. Wire it into
+`nk-activate-plugins` runs `wp core update-db`, then activates the list in
+`nkPluginToolkit.plugins`, in order, in both environments, retrying while the
+site is still coming up. The database upgrade matters after a switch of the
+WordPress core version, when wp-admin redirects to `upgrade.php`. Wire it into
 `.wp-env.json`:
 
 ```json

@@ -309,6 +309,51 @@ check('slow tests are reported', () => {
 	);
 });
 
+check('activation upgrades the database first, in both sites', () => {
+	const os = require('node:os');
+	const { spawnSync } = require('node:child_process');
+	const project = fs.mkdtempSync(path.join(os.tmpdir(), 'nk-activate-'));
+	const bin = path.join(project, 'node_modules', '.bin');
+	const log = path.join(project, 'calls.log');
+
+	fs.mkdirSync(bin, { recursive: true });
+	fs.writeFileSync(
+		path.join(project, 'package.json'),
+		JSON.stringify({ nkPluginToolkit: { plugins: ['my-plugin'] } })
+	);
+	// Records each call; `plugin list` answers with the plugin active.
+	fs.writeFileSync(
+		path.join(bin, 'wp-env'),
+		`#!/bin/sh\necho "$*" >> "${log}"\ncase "$*" in *"plugin list"*) echo '["my-plugin"]';; esac\n`,
+		{ mode: 0o755 }
+	);
+
+	try {
+		const result = spawnSync(
+			process.execPath,
+			[path.join(root, 'scripts', 'activate-plugin.js')],
+			{ cwd: project, encoding: 'utf-8' }
+		);
+
+		assert.equal(result.status, 0, result.stderr);
+
+		const calls = fs
+			.readFileSync(log, 'utf-8')
+			.trim()
+			.split('\n')
+			.filter((line) => !line.includes('plugin list'));
+
+		assert.deepEqual(calls, [
+			'run cli wp core update-db --quiet',
+			'run cli wp plugin activate my-plugin',
+			'run tests-cli wp core update-db --quiet',
+			'run tests-cli wp plugin activate my-plugin',
+		]);
+	} finally {
+		fs.rmSync(project, { recursive: true, force: true });
+	}
+});
+
 check('every runtime require is a declared dependency', () => {
 	const declared = new Set([
 		...Object.keys(pkg.dependencies || {}),
