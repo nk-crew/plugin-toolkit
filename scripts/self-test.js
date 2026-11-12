@@ -115,6 +115,109 @@ check('lint-staged factory filters generated paths', () => {
 	);
 });
 
+check(
+	'lint-staged ignores match inside the checkout, not its ancestors',
+	() => {
+		const os = require('node:os');
+		const { createLintStagedConfig } = require(
+			path.join(root, 'lint-staged.js')
+		);
+		// T3 Code keeps worktrees under ~/.t3, and a checkout can also sit below a
+		// directory that shares its name with an ignored one.
+		const base = fs.realpathSync(
+			fs.mkdtempSync(path.join(os.tmpdir(), 'nk-'))
+		);
+		const previous = process.cwd();
+
+		try {
+			for (const checkout of [
+				path.join(base, '.t3', 'worktrees', 'plugin'),
+				path.join(base, 'build', 'plugin'),
+			]) {
+				fs.mkdirSync(checkout, { recursive: true });
+				process.chdir(checkout);
+
+				const result = createLintStagedConfig()['**/*.{css,scss}']([
+					path.join(checkout, 'assets', 'a.scss'),
+					path.join(checkout, 'build', 'b.css'),
+				]);
+
+				assert.equal(
+					result,
+					`stylelint --custom-syntax postcss-scss ${path.join(checkout, 'assets', 'a.scss')}`,
+					`wrong files linted in ${checkout}`
+				);
+			}
+		} finally {
+			process.chdir(previous);
+			fs.rmSync(base, { recursive: true, force: true });
+		}
+	}
+);
+
+check('worktrees whose paths collide still get their own ports', () => {
+	const os = require('node:os');
+	const { selectPorts } = require(path.join(root, 'scripts', 'env-ports.js'));
+	const base = fs.mkdtempSync(path.join(os.tmpdir(), 'nk-ports-'));
+	const claimsDir = path.join(base, 'claims');
+	const owner = (name) => {
+		const dir = path.join(base, 'git', name);
+		fs.mkdirSync(dir, { recursive: true });
+		return dir;
+	};
+	const firstChoice = (projectRoot) =>
+		selectPorts({ projectRoot, owner: 'none', claimsDir }).port;
+
+	// Two checkout paths that hash to the same pair.
+	const seen = new Map();
+	let a;
+	let b;
+	let shared;
+	for (let i = 0; !b; i++) {
+		const candidate = `/worktrees/wt-${i}`;
+		shared = firstChoice(candidate);
+		[a, b] = seen.has(shared) ? [seen.get(shared), candidate] : [];
+		seen.set(shared, candidate);
+	}
+
+	try {
+		const claim = (projectRoot, gitDir, isFree = () => true) =>
+			selectPorts({
+				projectRoot,
+				owner: gitDir,
+				claimsDir,
+				claim: true,
+				isFree,
+			});
+		const gitA = owner('a');
+		const gitB = owner('b');
+		const first = claim(a, gitA);
+		const second = claim(b, gitB);
+
+		assert.equal(first.port, shared, 'the first claim moved');
+		assert.notEqual(second.port, first.port, 'two worktrees share a pair');
+		assert.equal(second.testsPort, second.port + 1);
+		assert.deepEqual(claim(a, gitA), first, 'a rerun changed the pair');
+
+		const busy = firstChoice('/worktrees/c');
+		const third = claim(
+			'/worktrees/c',
+			owner('c'),
+			({ port }) => port !== busy
+		);
+		assert.notEqual(third.port, busy, 'a pair in use was handed out');
+
+		fs.rmSync(gitA, { recursive: true });
+		assert.equal(
+			claim(a, owner('d')).port,
+			first.port,
+			'the pair of a removed worktree was not released'
+		);
+	} finally {
+		fs.rmSync(base, { recursive: true, force: true });
+	}
+});
+
 check('env ports fall back to the defaults outside a worktree', () => {
 	const { getPorts } = require(path.join(root, 'scripts', 'env-ports.js'));
 	const previous = process.env.CI;
