@@ -107,9 +107,16 @@ otherwise the CI/local split ends up duplicated in every repository.
 ```
 
 `nk-wp-env` wraps `wp-env` and pins the ports for the current checkout: the main
-checkout keeps 8888/8889, linked worktrees derive their own pair, and explicit
-`WP_ENV_PORT` / `WP_ENV_TESTS_PORT` always win. Several branches can run their
-own WordPress at the same time.
+checkout keeps 8888/8889, linked worktrees get their own pair from 8900–8979,
+and explicit `WP_ENV_PORT` / `WP_ENV_TESTS_PORT` always win. Several branches
+can run their own WordPress at the same time.
+
+A worktree's first `nk-wp-env start` picks the pair derived from its path, or
+the next one when another worktree holds it or something already listens on
+it. The pick is recorded in `~/.nk-plugin-toolkit/env-ports/`, shared by every
+plugin, and the worktree keeps it on later runs. A pair is released once its
+worktree is removed with `git worktree remove`. Before the first start,
+`nk-env-ports` shows the pair the start would try first.
 
 `nk-activate-plugins` runs `wp core update-db`, then activates the list in
 `nkPluginToolkit.plugins`, in order, in both environments, retrying while the
