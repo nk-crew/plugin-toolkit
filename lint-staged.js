@@ -4,6 +4,7 @@
  * Biome owns JS and JSON, stylelint owns SCSS, composer owns PHP.
  */
 
+const path = require('node:path');
 const micromatch = require('micromatch');
 
 const DEFAULT_IGNORES = [
@@ -29,7 +30,14 @@ function createLintStagedConfig({ ignore = [] } = {}) {
 	const patterns = [...DEFAULT_IGNORES, ...ignore];
 
 	const run = (command) => (filenames) => {
-		const files = micromatch(filenames, patterns);
+		// lint-staged passes absolute paths, where `**` stops at a dot-directory
+		// such as `~/.t3` and an ancestor named `build` matches. Match below the
+		// checkout, as lint-staged does for its own globs.
+		const relative = filenames.map((file) =>
+			path.relative(process.cwd(), file)
+		);
+		const kept = new Set(micromatch(relative, patterns));
+		const files = filenames.filter((file, i) => kept.has(relative[i]));
 
 		return files.length ? `${command} ${files.join(' ')}` : [];
 	};
