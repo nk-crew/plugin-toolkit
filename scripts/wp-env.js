@@ -10,7 +10,7 @@
 const { spawn } = require('node:child_process');
 const { getPorts } = require('./env-ports.js');
 
-const { port, testsPort } = getPorts();
+const { port, testsPort } = getPorts({ claim: process.argv[2] === 'start' });
 
 const child = spawn('wp-env', process.argv.slice(2), {
 	stdio: 'inherit',

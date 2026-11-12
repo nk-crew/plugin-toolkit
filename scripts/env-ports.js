@@ -6,21 +6,21 @@
  * thing that collides between a main checkout and a `git worktree` is the pair
  * of published HTTP ports, which both default to 8888/8889.
  *
- * The main checkout keeps the familiar defaults. Linked worktrees get a stable
- * pair derived from their path, so several branches can run side by side.
+ * The main checkout keeps the familiar defaults. Linked worktrees get their own
+ * pair from `port-claims.js`, so several branches can run side by side.
  */
 
-const crypto = require('node:crypto');
 const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
+const { selectPorts } = require('./port-claims.js');
 
 const DEFAULT_PORT = 8888;
 const DEFAULT_TESTS_PORT = 8889;
 
-// Worktree ports live above the defaults, in pairs: 8900/8901, 8902/8903, ...
-const WORKTREE_PORT_BASE = 8900;
-const WORKTREE_PORT_PAIRS = 40;
+// Shared by every plugin, since they all publish to the same ports.
+const CLAIMS_DIR = path.join(os.homedir(), '.nk-plugin-toolkit', 'env-ports');
 
 /**
  * Finds the plugin checkout we are running for.
@@ -53,15 +53,15 @@ function findProjectRoot() {
 }
 
 /**
- * Whether the checkout is a linked worktree rather than the main one.
+ * The git directory of a linked worktree.
  *
  * In a linked worktree the git directory is `<main>/.git/worktrees/<name>`,
  * which the main checkout never is.
  *
  * @param {string} projectRoot The checkout to inspect.
- * @return {boolean} True when running from a linked worktree.
+ * @return {string|null} The git directory, or null for the main checkout.
  */
-function isLinkedWorktree(projectRoot) {
+function getWorktreeGitDir(projectRoot) {
 	try {
 		const gitDir = execFileSync(
 			'git',
@@ -73,27 +73,11 @@ function isLinkedWorktree(projectRoot) {
 			}
 		).trim();
 
-		return gitDir.split(/[\\/]/).includes('worktrees');
+		return gitDir.split(/[\\/]/).includes('worktrees') ? gitDir : null;
 	} catch {
 		// Not a git checkout at all — treat it as the main one.
-		return false;
+		return null;
 	}
-}
-
-/**
- * Derives a stable port pair from the checkout path.
- *
- * @param {string} projectRoot The checkout to derive from.
- * @return {{ port: number, testsPort: number }} The derived ports.
- */
-function derivePorts(projectRoot) {
-	const hash = crypto.createHash('md5').update(projectRoot).digest();
-	const offset = (hash.readUInt16BE(0) % WORKTREE_PORT_PAIRS) * 2;
-
-	return {
-		port: WORKTREE_PORT_BASE + offset,
-		testsPort: WORKTREE_PORT_BASE + offset + 1,
-	};
 }
 
 /**
@@ -102,9 +86,14 @@ function derivePorts(projectRoot) {
  * Explicit environment variables always win, so CI and one-off overrides keep
  * working unchanged.
  *
+ * @param {Object}  [options]       Options.
+ * @param {boolean} [options.claim] Record the pair for this worktree. Only
+ *                                  what starts the environment does
+ *                                  (`nk-wp-env start`, and the Playwright
+ *                                  config, whose web server runs it).
  * @return {{ port: number, testsPort: number }} The resolved ports.
  */
-function getPorts() {
+function getPorts({ claim = false } = {}) {
 	const envPort = Number.parseInt(process.env.WP_ENV_PORT || '', 10);
 	const envTestsPort = Number.parseInt(
 		process.env.WP_ENV_TESTS_PORT || '',
@@ -116,10 +105,15 @@ function getPorts() {
 	}
 
 	const projectRoot = findProjectRoot();
-	const defaults =
-		!process.env.CI && isLinkedWorktree(projectRoot)
-			? derivePorts(projectRoot)
-			: { port: DEFAULT_PORT, testsPort: DEFAULT_TESTS_PORT };
+	const gitDir = process.env.CI ? null : getWorktreeGitDir(projectRoot);
+	const defaults = gitDir
+		? selectPorts({
+				projectRoot,
+				owner: gitDir,
+				claimsDir: CLAIMS_DIR,
+				claim,
+			})
+		: { port: DEFAULT_PORT, testsPort: DEFAULT_TESTS_PORT };
 
 	return {
 		port: envPort || defaults.port,

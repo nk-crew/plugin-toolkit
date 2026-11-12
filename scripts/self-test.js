@@ -115,6 +115,164 @@ check('lint-staged factory filters generated paths', () => {
 	);
 });
 
+check(
+	'lint-staged ignores match inside the checkout, not its ancestors',
+	() => {
+		const os = require('node:os');
+		const { createLintStagedConfig } = require(
+			path.join(root, 'lint-staged.js')
+		);
+		// T3 Code keeps worktrees under ~/.t3, and a checkout can also sit below a
+		// directory that shares its name with an ignored one.
+		const base = fs.realpathSync(
+			fs.mkdtempSync(path.join(os.tmpdir(), 'nk-'))
+		);
+		const previous = process.cwd();
+
+		try {
+			for (const checkout of [
+				path.join(base, '.t3', 'worktrees', 'plugin'),
+				path.join(base, 'build', 'plugin'),
+			]) {
+				fs.mkdirSync(checkout, { recursive: true });
+				process.chdir(checkout);
+
+				const result = createLintStagedConfig()['**/*.{css,scss}']([
+					path.join(checkout, 'assets', 'a.scss'),
+					path.join(checkout, 'build', 'b.css'),
+				]);
+
+				assert.equal(
+					result,
+					`stylelint --custom-syntax postcss-scss ${path.join(checkout, 'assets', 'a.scss')}`,
+					`wrong files linted in ${checkout}`
+				);
+			}
+		} finally {
+			process.chdir(previous);
+			fs.rmSync(base, { recursive: true, force: true });
+		}
+	}
+);
+
+check('worktrees whose paths collide still get their own ports', () => {
+	const os = require('node:os');
+	const { selectPorts } = require(
+		path.join(root, 'scripts', 'port-claims.js')
+	);
+	const base = fs.mkdtempSync(path.join(os.tmpdir(), 'nk-ports-'));
+	const claimsDir = path.join(base, 'claims');
+	const owner = (name) => {
+		const dir = path.join(base, 'git', name);
+		fs.mkdirSync(dir, { recursive: true });
+		return dir;
+	};
+	const firstChoice = (projectRoot) =>
+		selectPorts({
+			projectRoot,
+			owner: 'none',
+			claimsDir,
+			isFree: () => true,
+		}).port;
+
+	// Two checkout paths that hash to the same pair.
+	const seen = new Map();
+	let a;
+	let b;
+	let shared;
+	for (let i = 0; !b; i++) {
+		const candidate = `/worktrees/wt-${i}`;
+		shared = firstChoice(candidate);
+		[a, b] = seen.has(shared) ? [seen.get(shared), candidate] : [];
+		seen.set(shared, candidate);
+	}
+
+	try {
+		const claim = (projectRoot, gitDir, isFree = () => true) =>
+			selectPorts({
+				projectRoot,
+				owner: gitDir,
+				claimsDir,
+				claim: true,
+				isFree,
+			});
+		const gitA = owner('a');
+		const gitB = owner('b');
+		const first = claim(a, gitA);
+		const second = claim(b, gitB);
+
+		assert.equal(first.port, shared, 'the first claim moved');
+		assert.notEqual(second.port, first.port, 'two worktrees share a pair');
+		assert.equal(second.testsPort, second.port + 1);
+		assert.deepEqual(claim(a, gitA), first, 'a rerun changed the pair');
+
+		const busy = firstChoice('/worktrees/c');
+		const third = claim(
+			'/worktrees/c',
+			owner('c'),
+			({ port }) => port !== busy
+		);
+		assert.notEqual(third.port, busy, 'a pair in use was handed out');
+
+		fs.rmSync(gitA, { recursive: true });
+		assert.equal(
+			claim(a, owner('d')).port,
+			first.port,
+			'the pair of a removed worktree was not released'
+		);
+
+		// Fill every pair, then start one more worktree while only one of
+		// the holders is stopped.
+		const holders = Array.from({ length: 40 }, (_, i) =>
+			claim(`/worktrees/full-${i}`, owner(`full-${i}`))
+		);
+		// Every holder but one starts again, so that one is the stopped
+		// worktree started longest ago.
+		const old = new Date(Date.now() - 60_000);
+		for (const { port } of holders) {
+			fs.utimesSync(path.join(claimsDir, String(port)), old, old);
+		}
+		holders.forEach((pair, i) => {
+			if (i !== 3) {
+				claim(
+					`/worktrees/full-${i}`,
+					path.join(base, 'git', `full-${i}`)
+				);
+			}
+		});
+		assert.equal(
+			claim('/worktrees/next', owner('next')).port,
+			holders[3].port,
+			'a full pool did not hand over the pair started longest ago'
+		);
+
+		const stopped = holders[7];
+		assert.equal(
+			claim('/worktrees/late', owner('late'), (pair) => {
+				return pair.port === stopped.port;
+			}).port,
+			stopped.port,
+			'a full pool did not hand over a stopped worktree pair'
+		);
+		assert.throws(
+			() => claim('/worktrees/later', owner('later'), () => false),
+			/in use/,
+			'a pool with every pair in use handed one out'
+		);
+		assert.ok(
+			selectPorts({
+				projectRoot: '/worktrees/later',
+				owner: 'x',
+				claimsDir,
+				isFree: () => true,
+			}).port,
+			'reading from a full pool threw'
+		);
+	} finally {
+		fs.rmSync(base, { recursive: true, force: true });
+	}
+});
+
 check('env ports fall back to the defaults outside a worktree', () => {
 	const { getPorts } = require(path.join(root, 'scripts', 'env-ports.js'));
 	const previous = process.env.CI;
@@ -143,6 +301,15 @@ function buildPlaywrightConfig(ci, options = {}) {
 	);
 	const previousCI = process.env.CI;
 	const previousBaseURL = process.env.WP_BASE_URL;
+	const previousPorts = [
+		process.env.WP_ENV_PORT,
+		process.env.WP_ENV_TESTS_PORT,
+	];
+
+	// Outside CI the config claims a pair, which must not reach the real
+	// claims folder when this runs from a linked worktree.
+	process.env.WP_ENV_PORT = '8888';
+	process.env.WP_ENV_TESTS_PORT = '8889';
 
 	if (ci) {
 		process.env.CI = '1';
@@ -167,6 +334,17 @@ function buildPlaywrightConfig(ci, options = {}) {
 			delete process.env.WP_BASE_URL;
 		} else {
 			process.env.WP_BASE_URL = previousBaseURL;
+		}
+
+		for (const [name, value] of [
+			['WP_ENV_PORT', previousPorts[0]],
+			['WP_ENV_TESTS_PORT', previousPorts[1]],
+		]) {
+			if (value === undefined) {
+				delete process.env[name];
+			} else {
+				process.env[name] = value;
+			}
 		}
 	}
 }
@@ -364,6 +542,7 @@ check('every runtime require is a declared dependency', () => {
 		'playwright.js',
 		'stylelint.js',
 		'scripts/env-ports.js',
+		'scripts/port-claims.js',
 		'scripts/wp-env.js',
 		'scripts/activate-plugin.js',
 	];
