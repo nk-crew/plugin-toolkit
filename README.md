@@ -115,8 +115,14 @@ A worktree's first `nk-wp-env start` picks the pair derived from its path, or
 the next one when another worktree holds it or something already listens on
 it. The pick is recorded in `~/.nk-plugin-toolkit/env-ports/`, shared by every
 plugin, and the worktree keeps it on later runs. A pair is released once its
-worktree is removed with `git worktree remove`. Before the first start,
+worktree is removed with `git worktree remove`. When every pair is held, a
+start takes over the pair of a stopped worktree, the one started longest ago,
+and that worktree picks a new pair on its next start. Before the first start,
 `nk-env-ports` shows the pair the start would try first.
+
+A worktree whose environment is already running on its old pair moves to a
+new pair on its first start after upgrading to 0.6.1, because its own
+containers hold the old one.
 
 `nk-activate-plugins` runs `wp core update-db`, then activates the list in
 `nkPluginToolkit.plugins`, in order, in both environments, retrying while the

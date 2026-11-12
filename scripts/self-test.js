@@ -157,7 +157,9 @@ check(
 
 check('worktrees whose paths collide still get their own ports', () => {
 	const os = require('node:os');
-	const { selectPorts } = require(path.join(root, 'scripts', 'env-ports.js'));
+	const { selectPorts } = require(
+		path.join(root, 'scripts', 'port-claims.js')
+	);
 	const base = fs.mkdtempSync(path.join(os.tmpdir(), 'nk-ports-'));
 	const claimsDir = path.join(base, 'claims');
 	const owner = (name) => {
@@ -212,6 +214,33 @@ check('worktrees whose paths collide still get their own ports', () => {
 			claim(a, owner('d')).port,
 			first.port,
 			'the pair of a removed worktree was not released'
+		);
+
+		// Fill every pair, then start one more worktree while only one of
+		// the holders is stopped.
+		const holders = Array.from({ length: 40 }, (_, i) =>
+			claim(`/worktrees/full-${i}`, owner(`full-${i}`))
+		);
+		const stopped = holders[7];
+		assert.equal(
+			claim('/worktrees/late', owner('late'), (pair) => {
+				return pair.port === stopped.port;
+			}).port,
+			stopped.port,
+			'a full pool did not hand over a stopped worktree pair'
+		);
+		assert.throws(
+			() => claim('/worktrees/later', owner('later'), () => false),
+			/in use/,
+			'a pool with every pair in use handed one out'
+		);
+		assert.ok(
+			selectPorts({
+				projectRoot: '/worktrees/later',
+				owner: 'x',
+				claimsDir,
+			}).port,
+			'reading from a full pool threw'
 		);
 	} finally {
 		fs.rmSync(base, { recursive: true, force: true });
@@ -467,6 +496,7 @@ check('every runtime require is a declared dependency', () => {
 		'playwright.js',
 		'stylelint.js',
 		'scripts/env-ports.js',
+		'scripts/port-claims.js',
 		'scripts/wp-env.js',
 		'scripts/activate-plugin.js',
 	];
