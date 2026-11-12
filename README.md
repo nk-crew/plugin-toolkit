@@ -119,11 +119,12 @@ plugin, and the worktree keeps it on later runs. A pair is released once its
 worktree is removed with `git worktree remove`. When every pair is held, a
 start takes over the pair of a stopped worktree, the one started longest ago,
 and that worktree picks a new pair on its next start. Before the first start,
-`nk-env-ports` shows the pair the start would try first.
+`nk-env-ports` shows the pair a start would pick right now.
 
 A worktree whose environment is already running on its old pair moves to a
 new pair on its first start after upgrading to 0.6.1, because its own
-containers hold the old one.
+containers hold the old one. A site that moves keeps the old port in absolute
+URLs stored in its content, such as image blocks.
 
 `nk-activate-plugins` runs `wp core update-db`, then activates the list in
 `nkPluginToolkit.plugins`, in order, in both environments, retrying while the

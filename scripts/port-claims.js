@@ -107,30 +107,13 @@ function withLock(claimsDir, fn) {
 }
 
 /**
- * Picks the pair for a linked worktree.
+ * The recorded claims.
  *
- * @param {Object}   options             Options.
- * @param {string}   options.projectRoot The checkout path the first pair is derived from.
- * @param {string}   options.owner       The worktree's git directory.
- * @param {string}   options.claimsDir   Where claims are recorded.
- * @param {boolean}  [options.claim]     Record the pair, skipping pairs in use.
- * @param {Function} [options.isFree]    Tests whether a pair is unused.
- * @return {{ port: number, testsPort: number }} The pair.
+ * @param {string} claimsDir Where claims are recorded.
+ * @return {Array<Object>} One entry per record.
  */
-function selectPorts({ claim = false, claimsDir, ...options }) {
-	return claim
-		? withLock(claimsDir, () => choose({ claim, claimsDir, ...options }))
-		: choose({ claim, claimsDir, ...options });
-}
-
-/**
- * The body of `selectPorts`, run under the lock when it claims.
- *
- * @param {Object} options See `selectPorts`.
- * @return {{ port: number, testsPort: number }} The pair.
- */
-function choose({ projectRoot, owner, claimsDir, claim, isFree = isPairFree }) {
-	const records = (fs.existsSync(claimsDir) ? fs.readdirSync(claimsDir) : [])
+function readRecords(claimsDir) {
+	return (fs.existsSync(claimsDir) ? fs.readdirSync(claimsDir) : [])
 		.filter((name) => /^\d+$/.test(name))
 		.map((name) => {
 			const file = path.join(claimsDir, name);
@@ -142,17 +125,17 @@ function choose({ projectRoot, owner, claimsDir, claim, isFree = isPairFree }) {
 				startedAt: fs.statSync(file).mtimeMs,
 			};
 		});
-	const own = records.find((record) => record.holder === owner);
+}
 
-	if (own) {
-		if (claim) {
-			const now = new Date();
-			fs.utimesSync(own.file, now, now);
-		}
-
-		return pairOf(own.port);
-	}
-
+/**
+ * The first free pair for a worktree without a record.
+ *
+ * @param {Array<Object>} records     The recorded claims.
+ * @param {string}        projectRoot The checkout path the first pair is derived from.
+ * @param {Function}      isFree      Tests whether a pair is unused.
+ * @return {{ port: number, testsPort: number }} The pair.
+ */
+function choosePair(records, projectRoot, isFree) {
 	const held = new Map(
 		records
 			.filter((record) => fs.existsSync(record.holder))
@@ -163,20 +146,15 @@ function choose({ projectRoot, owner, claimsDir, claim, isFree = isPairFree }) {
 	const pairs = Array.from({ length: WORKTREE_PORT_PAIRS }, (_, i) =>
 		pairOf(WORKTREE_PORT_BASE + ((start + i) % WORKTREE_PORT_PAIRS) * 2)
 	);
-	const unheld = pairs.filter(({ port }) => !held.has(port));
-
-	if (!claim) {
-		return unheld[0] || pairs[0];
-	}
-
 	const stoppedFirst = pairs
 		.filter(({ port }) => held.has(port))
 		.sort(
 			(a, b) => held.get(a.port).startedAt - held.get(b.port).startedAt
 		);
-	const pair = [...unheld, ...stoppedFirst].find((candidate) =>
-		isFree(candidate)
-	);
+	const pair = [
+		...pairs.filter(({ port }) => !held.has(port)),
+		...stoppedFirst,
+	].find((candidate) => isFree(candidate));
 
 	if (!pair) {
 		throw new Error(
@@ -184,12 +162,69 @@ function choose({ projectRoot, owner, claimsDir, claim, isFree = isPairFree }) {
 		);
 	}
 
-	// Renamed into place, so a reader never sees a half-written record.
-	const temp = path.join(claimsDir, `${pair.port}.${process.pid}.tmp`);
-	fs.writeFileSync(temp, owner);
-	fs.renameSync(temp, path.join(claimsDir, String(pair.port)));
-
 	return pair;
+}
+
+/**
+ * Picks the pair for a linked worktree.
+ *
+ * Without `claim` it answers what a claim would pick right now, and records
+ * nothing.
+ *
+ * @param {Object}   options             Options.
+ * @param {string}   options.projectRoot The checkout path the first pair is derived from.
+ * @param {string}   options.owner       The worktree's git directory.
+ * @param {string}   options.claimsDir   Where claims are recorded.
+ * @param {boolean}  [options.claim]     Record the pair.
+ * @param {Function} [options.isFree]    Tests whether a pair is unused.
+ * @return {{ port: number, testsPort: number }} The pair.
+ */
+function selectPorts({
+	projectRoot,
+	owner,
+	claimsDir,
+	claim = false,
+	isFree = isPairFree,
+}) {
+	const records = readRecords(claimsDir);
+	const own = records.find((record) => record.holder === owner);
+
+	if (own) {
+		if (claim) {
+			const now = new Date();
+
+			try {
+				fs.utimesSync(own.file, now, now);
+			} catch {
+				// A sandboxed agent may read the claims without writing them.
+				// The pair is still its own.
+			}
+		}
+
+		return pairOf(own.port);
+	}
+
+	if (!claim) {
+		return choosePair(records, projectRoot, isFree);
+	}
+
+	return withLock(claimsDir, () => {
+		const current = readRecords(claimsDir);
+		// A concurrent start of the same worktree may have claimed first.
+		const won = current.find((record) => record.holder === owner);
+
+		if (won) {
+			return pairOf(won.port);
+		}
+
+		const pair = choosePair(current, projectRoot, isFree);
+		// Renamed into place, so a reader never sees a half-written record.
+		const temp = path.join(claimsDir, `${pair.port}.${process.pid}.tmp`);
+		fs.writeFileSync(temp, owner);
+		fs.renameSync(temp, path.join(claimsDir, String(pair.port)));
+
+		return pair;
+	});
 }
 
 module.exports = { selectPorts };

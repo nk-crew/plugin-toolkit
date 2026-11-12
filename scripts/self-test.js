@@ -168,7 +168,12 @@ check('worktrees whose paths collide still get their own ports', () => {
 		return dir;
 	};
 	const firstChoice = (projectRoot) =>
-		selectPorts({ projectRoot, owner: 'none', claimsDir }).port;
+		selectPorts({
+			projectRoot,
+			owner: 'none',
+			claimsDir,
+			isFree: () => true,
+		}).port;
 
 	// Two checkout paths that hash to the same pair.
 	const seen = new Map();
@@ -221,6 +226,26 @@ check('worktrees whose paths collide still get their own ports', () => {
 		const holders = Array.from({ length: 40 }, (_, i) =>
 			claim(`/worktrees/full-${i}`, owner(`full-${i}`))
 		);
+		// Every holder but one starts again, so that one is the stopped
+		// worktree started longest ago.
+		const old = new Date(Date.now() - 60_000);
+		for (const { port } of holders) {
+			fs.utimesSync(path.join(claimsDir, String(port)), old, old);
+		}
+		holders.forEach((pair, i) => {
+			if (i !== 3) {
+				claim(
+					`/worktrees/full-${i}`,
+					path.join(base, 'git', `full-${i}`)
+				);
+			}
+		});
+		assert.equal(
+			claim('/worktrees/next', owner('next')).port,
+			holders[3].port,
+			'a full pool did not hand over the pair started longest ago'
+		);
+
 		const stopped = holders[7];
 		assert.equal(
 			claim('/worktrees/late', owner('late'), (pair) => {
@@ -239,6 +264,7 @@ check('worktrees whose paths collide still get their own ports', () => {
 				projectRoot: '/worktrees/later',
 				owner: 'x',
 				claimsDir,
+				isFree: () => true,
 			}).port,
 			'reading from a full pool threw'
 		);
@@ -275,6 +301,15 @@ function buildPlaywrightConfig(ci, options = {}) {
 	);
 	const previousCI = process.env.CI;
 	const previousBaseURL = process.env.WP_BASE_URL;
+	const previousPorts = [
+		process.env.WP_ENV_PORT,
+		process.env.WP_ENV_TESTS_PORT,
+	];
+
+	// Outside CI the config claims a pair, which must not reach the real
+	// claims folder when this runs from a linked worktree.
+	process.env.WP_ENV_PORT = '8888';
+	process.env.WP_ENV_TESTS_PORT = '8889';
 
 	if (ci) {
 		process.env.CI = '1';
@@ -299,6 +334,17 @@ function buildPlaywrightConfig(ci, options = {}) {
 			delete process.env.WP_BASE_URL;
 		} else {
 			process.env.WP_BASE_URL = previousBaseURL;
+		}
+
+		for (const [name, value] of [
+			['WP_ENV_PORT', previousPorts[0]],
+			['WP_ENV_TESTS_PORT', previousPorts[1]],
+		]) {
+			if (value === undefined) {
+				delete process.env[name];
+			} else {
+				process.env[name] = value;
+			}
 		}
 	}
 }
