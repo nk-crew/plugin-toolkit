@@ -111,7 +111,8 @@ checkout keeps 8888/8889, linked worktrees get their own pair from 8900–8979,
 and explicit `WP_ENV_PORT` / `WP_ENV_TESTS_PORT` always win. Several branches
 can run their own WordPress at the same time.
 
-A worktree's first `nk-wp-env start` picks the pair derived from its path, or
+A worktree's first `nk-wp-env start`, or Playwright run, which starts it,
+picks the pair derived from its path, or
 the next one when another worktree holds it or something already listens on
 it. The pick is recorded in `~/.nk-plugin-toolkit/env-ports/`, shared by every
 plugin, and the worktree keeps it on later runs. A pair is released once its

@@ -44,7 +44,7 @@ function createPlaywrightConfig({
 	reporters = [],
 	overrides = {},
 }) {
-	const { testsPort } = getPorts();
+	const { testsPort } = getPorts({ claim: true });
 	const baseURL = process.env.WP_BASE_URL || `http://localhost:${testsPort}`;
 
 	// `@wordpress/e2e-test-utils-playwright` reads this from the environment

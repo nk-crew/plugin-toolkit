@@ -88,9 +88,12 @@ function getWorktreeGitDir(projectRoot) {
  *
  * @param {Object}  [options]       Options.
  * @param {boolean} [options.claim] Record the pair for this worktree, skipping
- *                                  pairs in use. Only `nk-wp-env start` does:
- *                                  a running environment holds its own ports
- *                                  and would push itself off them.
+ *                                  pairs in use. Only what starts the
+ *                                  environment does (`nk-wp-env start`, and
+ *                                  the Playwright config, whose web server runs
+ *                                  it), so both agree on the pair. Elsewhere a
+ *                                  running environment would push itself off
+ *                                  its own ports.
  * @return {{ port: number, testsPort: number }} The resolved ports.
  */
 function getPorts({ claim = false } = {}) {
